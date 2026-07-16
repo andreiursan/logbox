@@ -1,0 +1,8 @@
+syntax = "proto2";
+
+message LogMessage {
+  required string log_level = 1; // One of: DEBUG, INFO, WARNING, ERROR
+  required string logger = 2;    // Identifier for the source in the client application
+  required bytes mac = 3;        // MAC address of the client's system
+  optional string message = 4;   // Free-form log content
+}
