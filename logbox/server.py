@@ -63,7 +63,7 @@ def _handle_client(conn: socket.socket, addr: Address, clients: "_ClientSet") ->
     """Run one connection to completion, isolating its failures."""
     try:
         with conn:
-            handle_connection(conn)
+            handle_connection(conn, addr)
     except (DecodeError, FrameTooLargeError) as exc:
         log.warning("dropping client %s:%d: %s", *addr, exc)
     except OSError as exc:
@@ -74,7 +74,7 @@ def _handle_client(conn: socket.socket, addr: Address, clients: "_ClientSet") ->
         clients.discard(conn)
 
 
-def handle_connection(conn: socket.socket) -> None:
+def handle_connection(conn: socket.socket, addr: Address) -> None:
     """Read frames from one client until it disconnects, emitting each message."""
     decoder = FrameDecoder()
     while data := conn.recv(RECV_SIZE):
@@ -82,7 +82,7 @@ def handle_connection(conn: socket.socket) -> None:
             lm = LogMessage.FromString(frame)
             message_log.log(_LEVELS.get(lm.log_level, logging.INFO), format_log_message(lm))
     if decoder.has_partial_frame:
-        log.info("client disconnected mid-message")
+        log.info("client %s:%d disconnected mid-message", *addr)
 
 
 class _ClientSet:
