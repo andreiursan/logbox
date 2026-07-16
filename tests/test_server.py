@@ -60,13 +60,21 @@ class TestServerIntegration(unittest.TestCase):
         self.assert_logged("ERROR [01] app: hi")
         self.assert_logged("INFO [01] app")
 
-    def test_serves_concurrent_connections(self):
+    def test_serves_100_clients_and_queues_the_next(self):
         with ExitStack() as stack:
-            socks = [stack.enter_context(self.connect()) for _ in range(20)]
+            socks = [stack.enter_context(self.connect()) for _ in range(100)]
             for i, sock in enumerate(socks):  # all connected before any sends
                 sock.sendall(encode(log_level="INFO", logger=f"client-{i}", mac=b"\x0c"))
             for i in range(len(socks)):
-                self.assert_logged(f"INFO [0c] client-{i}")
+                self.assert_logged(f"INFO [0c] client-{i}")  # all 100 served at once
+
+            extra = stack.enter_context(self.connect())  # 101st: kernel backlog
+            extra.sendall(encode(log_level="INFO", logger="waiting", mac=b"\x0d"))
+            time.sleep(0.15)
+            self.assertNotIn("INFO [0d] waiting", self.stdout.getvalue())
+
+            socks[0].close()  # a slot frees; the queued client gets served
+            self.assert_logged("INFO [0d] waiting")
 
     def test_survives_mid_frame_disconnect(self):
         with self.connect() as sock:

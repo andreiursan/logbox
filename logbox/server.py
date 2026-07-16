@@ -52,14 +52,18 @@ def serve(
     _setup_logging()
     clients = _ClientSet()
     pool = ThreadPoolExecutor(max_connections, thread_name_prefix="client")
+    slots = threading.Semaphore(max_connections)
     try:
         with socket.create_server((host, port)) as server_sock:
             log.info("listening on %s:%d", host, port)
             while True:
+                # don't accept (and hold fds for) more clients than we can
+                # serve; excess connections wait in the kernel's backlog
+                slots.acquire()
                 conn, addr = server_sock.accept()
                 _enable_keepalive(conn)
                 clients.add(conn)
-                pool.submit(_handle_client, conn, addr, clients)
+                pool.submit(_handle_client, conn, addr, clients, slots)
     except (KeyboardInterrupt, SystemExit):
         log.info("shutting down")
     finally:
@@ -86,7 +90,9 @@ def _enable_keepalive(conn: socket.socket) -> None:
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, KEEPALIVE_PROBES)
 
 
-def _handle_client(conn: socket.socket, addr: Address, clients: "_ClientSet") -> None:
+def _handle_client(
+    conn: socket.socket, addr: Address, clients: "_ClientSet", slots: threading.Semaphore
+) -> None:
     """Run one connection to completion, isolating its failures."""
     try:
         with conn:
@@ -99,6 +105,7 @@ def _handle_client(conn: socket.socket, addr: Address, clients: "_ClientSet") ->
         log.exception("unexpected error handling client %s:%d", *addr)
     finally:
         clients.discard(conn)
+        slots.release()
 
 
 def handle_connection(conn: socket.socket, addr: Address) -> None:
