@@ -1,5 +1,8 @@
+from logbox.server import serve
+
+
 def main():
-    print("Hello from logbox!")
+    serve()
 
 
 if __name__ == "__main__":

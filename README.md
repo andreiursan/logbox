@@ -10,10 +10,24 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-## Run
+## Running locally
+
+Start the server (listens on `127.0.0.1:15000`):
 
 ```sh
 .venv/bin/python -m logbox
+```
+
+Then, from a second terminal, send a demo log message with the bundled client:
+
+```sh
+.venv/bin/python -m scripts.client
+```
+
+The server prints each received message to stdout:
+
+```
+ERROR [aa:bb:cc:dd:ee:ff] main: test message
 ```
 
 ## Test
