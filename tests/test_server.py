@@ -79,3 +79,18 @@ class TestServerIntegration(unittest.TestCase):
         with self.connect() as sock:
             sock.sendall(encode(log_level="ERROR", logger="clean", mac=b"\x06"))
         self.assert_logged("ERROR [06] clean")
+
+    def test_drops_client_declaring_oversized_frame(self):
+        with self.connect() as sock:
+            sock.sendall(struct.pack(">L", 2 * 1024 * 1024))  # 2 MiB claim, no payload
+        with self.connect() as sock:
+            sock.sendall(encode(log_level="ERROR", logger="modest", mac=b"\x07"))
+        self.assert_logged("ERROR [07] modest")
+
+    def test_connection_survives_pause_between_messages(self):
+        with self.connect() as sock:
+            sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="before"))
+            self.assert_logged("INFO [08] patient: before")
+            time.sleep(0.3)  # idle connection must stay usable
+            sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="after"))
+        self.assert_logged("INFO [08] patient: after")
