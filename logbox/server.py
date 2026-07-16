@@ -30,6 +30,7 @@ QUEUE_CAPACITY = 10_000  # buffered messages while the stdout consumer stalls
 KEEPALIVE_IDLE = 60  # seconds of silence before the kernel starts probing
 KEEPALIVE_INTERVAL = 10  # seconds between probes
 KEEPALIVE_PROBES = 5  # failed probes before the connection is declared dead
+DRAIN_GRACE = 2.0  # seconds for connected clients to finish before shutdown cuts them
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
@@ -67,7 +68,10 @@ def serve(
     except (KeyboardInterrupt, SystemExit):
         log.info("shutting down")
     finally:
-        clients.shutdown_all()
+        # the listener is already closed: drain, then cut the stragglers
+        if not clients.drain(DRAIN_GRACE):
+            log.info("grace period expired; disconnecting remaining clients")
+            clients.shutdown_all()
         pool.shutdown()
 
 
@@ -120,23 +124,30 @@ def handle_connection(conn: socket.socket, addr: Address) -> None:
 
 
 class _ClientSet:
-    """Thread-safe registry of open client sockets, so shutdown can unblock
-    worker threads parked in recv()."""
+    """Thread-safe registry of open client sockets, so shutdown can wait for
+    connections to finish and unblock worker threads parked in recv()."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._cond = threading.Condition()
         self._socks: set[socket.socket] = set()
 
     def add(self, sock: socket.socket) -> None:
-        with self._lock:
+        with self._cond:
             self._socks.add(sock)
 
     def discard(self, sock: socket.socket) -> None:
-        with self._lock:
+        with self._cond:
             self._socks.discard(sock)
+            if not self._socks:
+                self._cond.notify_all()
+
+    def drain(self, timeout: float) -> bool:
+        """Wait until every connection has finished; False on timeout."""
+        with self._cond:
+            return self._cond.wait_for(lambda: not self._socks, timeout)
 
     def shutdown_all(self) -> None:
-        with self._lock:
+        with self._cond:
             for sock in self._socks:
                 with suppress(OSError):
                     sock.shutdown(socket.SHUT_RDWR)
