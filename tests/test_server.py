@@ -1,5 +1,6 @@
 import io
 import socket
+from contextlib import ExitStack
 import struct
 import sys
 import threading
@@ -56,6 +57,14 @@ class TestServerIntegration(unittest.TestCase):
             sock.sendall(encode(log_level="INFO", logger="app", mac=b"\x01"))
         self.assert_logged("ERROR [01] app: hi")
         self.assert_logged("INFO [01] app")
+
+    def test_serves_concurrent_connections(self):
+        with ExitStack() as stack:
+            socks = [stack.enter_context(self.connect()) for _ in range(20)]
+            for i, sock in enumerate(socks):  # all connected before any sends
+                sock.sendall(encode(log_level="INFO", logger=f"client-{i}", mac=b"\x0c"))
+            for i in range(len(socks)):
+                self.assert_logged(f"INFO [0c] client-{i}")
 
     def test_survives_mid_frame_disconnect(self):
         with self.connect() as sock:
