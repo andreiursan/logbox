@@ -9,17 +9,33 @@ import struct
 
 _PREFIX = struct.Struct(">L")
 
+DEFAULT_MAX_FRAME_SIZE = 1024 * 1024  # generous for a single log message
+
+
+class FrameTooLargeError(ValueError):
+    """A length prefix declared a frame larger than the configured maximum."""
+
 
 class FrameDecoder:
-    def __init__(self):
+    def __init__(self, max_frame_size=DEFAULT_MAX_FRAME_SIZE):
         self._buffer = bytearray()
+        self._max_frame_size = max_frame_size
 
     def feed(self, data):
-        """Buffer received bytes and return the payloads of all completed frames."""
+        """Buffer received bytes and return the payloads of all completed frames.
+
+        Raises FrameTooLargeError as soon as a length prefix exceeds the
+        maximum, before any payload is buffered — a corrupt or malicious
+        prefix must not make the server allocate unbounded memory.
+        """
         self._buffer.extend(data)
         frames = []
         while len(self._buffer) >= _PREFIX.size:
             (length,) = _PREFIX.unpack_from(self._buffer)
+            if length > self._max_frame_size:
+                raise FrameTooLargeError(
+                    f"declared frame size {length} exceeds maximum {self._max_frame_size}"
+                )
             end = _PREFIX.size + length
             if len(self._buffer) < end:
                 break

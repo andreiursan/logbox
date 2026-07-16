@@ -5,6 +5,8 @@ writes them to stdout.
 
 ## Setup
 
+Requires Python 3.11+.
+
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt

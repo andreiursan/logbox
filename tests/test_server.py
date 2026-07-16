@@ -72,3 +72,10 @@ class TestServerIntegration(unittest.TestCase):
         with self.connect() as sock:  # the next client must still be served
             sock.sendall(encode(log_level="WARNING", logger="after", mac=b"\x02"))
         self.assert_logged("WARNING [02] after")
+
+    def test_drops_undecodable_client_and_keeps_serving(self):
+        with self.connect() as sock:
+            sock.sendall(struct.pack(">L", 8) + b"\xff" * 8)  # valid frame, garbage protobuf
+        with self.connect() as sock:
+            sock.sendall(encode(log_level="ERROR", logger="clean", mac=b"\x06"))
+        self.assert_logged("ERROR [06] clean")

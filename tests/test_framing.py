@@ -1,7 +1,7 @@
 import struct
 import unittest
 
-from logbox.framing import FrameDecoder
+from logbox.framing import FrameDecoder, FrameTooLargeError
 
 
 def frame(payload):
@@ -20,6 +20,11 @@ class TestFrameDecoder(unittest.TestCase):
                     frames.extend(decoder.feed(data[i : i + chunk_size]))
                 self.assertEqual(frames, payloads)
                 self.assertFalse(decoder.has_partial_frame)
+
+    def test_rejects_oversized_frame_from_prefix_alone(self):
+        decoder = FrameDecoder(max_frame_size=10)
+        with self.assertRaises(FrameTooLargeError):
+            decoder.feed(struct.pack(">L", 11))  # no payload needed to reject
 
     def test_incomplete_frame_is_buffered_until_finished(self):
         decoder = FrameDecoder()
