@@ -27,6 +27,9 @@ DEFAULT_PORT = 15000
 MAX_CONNECTIONS = 100
 RECV_SIZE = 4096
 QUEUE_CAPACITY = 10_000  # buffered messages while the stdout consumer stalls
+KEEPALIVE_IDLE = 60  # seconds of silence before the kernel starts probing
+KEEPALIVE_INTERVAL = 10  # seconds between probes
+KEEPALIVE_PROBES = 5  # failed probes before the connection is declared dead
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
@@ -54,6 +57,7 @@ def serve(
             log.info("listening on %s:%d", host, port)
             while True:
                 conn, addr = server_sock.accept()
+                _enable_keepalive(conn)
                 clients.add(conn)
                 pool.submit(_handle_client, conn, addr, clients)
     except (KeyboardInterrupt, SystemExit):
@@ -61,6 +65,25 @@ def serve(
     finally:
         clients.shutdown_all()
         pool.shutdown()
+
+
+def _enable_keepalive(conn: socket.socket) -> None:
+    """Detect clients that vanish without closing (power loss, NAT timeout).
+
+    Idle connections are legitimate here, so the worker thread blocks in
+    recv() indefinitely; without keepalive a dead peer would hold its worker
+    forever. With it, the kernel probes and recv() fails once the peer is
+    declared dead. The idle-time constant is TCP_KEEPIDLE on Linux and
+    TCP_KEEPALIVE on macOS/BSD.
+    """
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(socket, "TCP_KEEPALIVE", None)
+    if idle_opt is not None:
+        conn.setsockopt(socket.IPPROTO_TCP, idle_opt, KEEPALIVE_IDLE)
+    if hasattr(socket, "TCP_KEEPINTVL"):
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, KEEPALIVE_INTERVAL)
+    if hasattr(socket, "TCP_KEEPCNT"):
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, KEEPALIVE_PROBES)
 
 
 def _handle_client(conn: socket.socket, addr: Address, clients: "_ClientSet") -> None:

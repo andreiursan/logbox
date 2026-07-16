@@ -10,7 +10,7 @@ import time
 import unittest
 
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import _DropWhenFullHandler, serve
+from logbox.server import _DropWhenFullHandler, _enable_keepalive, serve
 
 TIMEOUT = 5.0
 
@@ -96,6 +96,14 @@ class TestServerIntegration(unittest.TestCase):
             time.sleep(0.3)  # idle connection must stay usable
             sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="after"))
         self.assert_logged("INFO [08] patient: after")
+
+
+class TestKeepalive(unittest.TestCase):
+    def test_enables_keepalive_on_socket(self):
+        with socket.socket() as sock:
+            _enable_keepalive(sock)
+            # nonzero means enabled; the exact value is platform-specific
+            self.assertNotEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0)
 
 
 class TestDropWhenFullHandler(unittest.TestCase):
