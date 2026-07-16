@@ -9,7 +9,7 @@ Requires Python 3.11+.
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e .
 ```
 
 ## Running locally
@@ -17,7 +17,7 @@ python3 -m venv .venv
 Start the server (listens on `127.0.0.1:15000`):
 
 ```sh
-.venv/bin/python -m logbox
+.venv/bin/python -m logbox   # or: .venv/bin/logbox
 ```
 
 Then, from a second terminal, send a demo log message with the bundled client:
