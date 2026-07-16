@@ -1,4 +1,6 @@
 import io
+import logging
+import queue
 import socket
 from contextlib import ExitStack
 import struct
@@ -8,7 +10,7 @@ import time
 import unittest
 
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import serve
+from logbox.server import _DropWhenFullHandler, serve
 
 TIMEOUT = 5.0
 
@@ -94,3 +96,13 @@ class TestServerIntegration(unittest.TestCase):
             time.sleep(0.3)  # idle connection must stay usable
             sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="after"))
         self.assert_logged("INFO [08] patient: after")
+
+
+class TestDropWhenFullHandler(unittest.TestCase):
+    def test_full_queue_drops_instead_of_blocking(self):
+        record_queue: queue.Queue = queue.Queue(maxsize=1)
+        handler = _DropWhenFullHandler(record_queue)
+        record = logging.LogRecord("t", logging.INFO, "", 0, "msg", None, None)
+        handler.enqueue(record)
+        handler.enqueue(record)  # queue full: must return, not block
+        self.assertEqual(record_queue.qsize(), 1)

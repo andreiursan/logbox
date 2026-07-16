@@ -6,12 +6,15 @@ misbehaving client (abrupt disconnect, undecodable or oversized message)
 costs only its own connection; the server keeps serving the rest.
 """
 
+import atexit
 import logging
+import queue
 import socket
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from logging.handlers import QueueHandler, QueueListener
 
 from google.protobuf.message import DecodeError
 
@@ -23,6 +26,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 15000
 MAX_CONNECTIONS = 100
 RECV_SIZE = 4096
+QUEUE_CAPACITY = 10_000  # buffered messages while the stdout consumer stalls
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
@@ -108,13 +112,39 @@ class _ClientSet:
                     sock.shutdown(socket.SHUT_RDWR)
 
 
+class _DropWhenFullHandler(QueueHandler):
+    """Enqueues records without ever blocking a network thread.
+
+    When the queue is full (the stdout consumer has stalled), records are
+    dropped and the loss is counted and reported, rather than freezing
+    every client connection behind one slow reader.
+    """
+
+    def __init__(self, record_queue: queue.Queue[logging.LogRecord]) -> None:
+        super().__init__(record_queue)
+        self._dropped = 0
+
+    def enqueue(self, record: logging.LogRecord) -> None:
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            self._dropped += 1
+            if self._dropped % 1000 == 1:
+                log.warning("output queue full; %d messages dropped so far", self._dropped)
+
+
 def _setup_logging() -> None:
-    """Received messages go to stdout bare; diagnostics go to stderr."""
+    """Received messages go to stdout bare, through a bounded queue drained
+    by a single writer thread; diagnostics go to stderr."""
     if message_log.handlers:  # idempotent: serve() may be called more than once
         return
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(logging.Formatter("%(message)s"))
-    message_log.addHandler(stdout_handler)
+    record_queue: queue.Queue[logging.LogRecord] = queue.Queue(QUEUE_CAPACITY)
+    listener = QueueListener(record_queue, stdout_handler)
+    listener.start()
+    atexit.register(listener.stop)  # drains pending records on exit
+    message_log.addHandler(_DropWhenFullHandler(record_queue))
     message_log.setLevel(logging.DEBUG)
     message_log.propagate = False
     logging.basicConfig(
