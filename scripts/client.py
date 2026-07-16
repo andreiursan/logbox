@@ -10,7 +10,7 @@ from logbox.logmessage_pb2 import LogMessage
 from logbox.server import DEFAULT_HOST, DEFAULT_PORT
 
 
-def main():
+def main() -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.connect((DEFAULT_HOST, DEFAULT_PORT))
 

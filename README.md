@@ -48,5 +48,5 @@ runs without `protoc`. To regenerate after changing the schema
 (requires `protoc`, e.g. `brew install protobuf`):
 
 ```sh
-protoc --proto_path=proto --python_out=logbox proto/logmessage.proto
+protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.proto
 ```

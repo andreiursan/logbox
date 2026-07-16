@@ -1,7 +1,9 @@
 """Formatting of decoded LogMessages into output lines."""
 
+from logbox.logmessage_pb2 import LogMessage
 
-def format_log_message(lm):
+
+def format_log_message(lm: LogMessage) -> str:
     """Render a LogMessage as a single line, e.g.
 
         ERROR [aa:bb:cc:dd:ee:ff] main: test message

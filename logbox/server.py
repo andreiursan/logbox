@@ -28,8 +28,14 @@ log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
 _LEVELS = logging.getLevelNamesMapping()
 
+Address = tuple[str, int]
 
-def serve(host=DEFAULT_HOST, port=DEFAULT_PORT, max_connections=MAX_CONNECTIONS):
+
+def serve(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    max_connections: int = MAX_CONNECTIONS,
+) -> None:
     """Accept connections forever, dispatching each to a worker thread.
 
     On KeyboardInterrupt or SystemExit (e.g. a SIGTERM handler calling
@@ -53,7 +59,7 @@ def serve(host=DEFAULT_HOST, port=DEFAULT_PORT, max_connections=MAX_CONNECTIONS)
         pool.shutdown()
 
 
-def _handle_client(conn, addr, clients):
+def _handle_client(conn: socket.socket, addr: Address, clients: "_ClientSet") -> None:
     """Run one connection to completion, isolating its failures."""
     try:
         with conn:
@@ -68,7 +74,7 @@ def _handle_client(conn, addr, clients):
         clients.discard(conn)
 
 
-def handle_connection(conn):
+def handle_connection(conn: socket.socket) -> None:
     """Read frames from one client until it disconnects, emitting each message."""
     decoder = FrameDecoder()
     while data := conn.recv(RECV_SIZE):
@@ -83,26 +89,26 @@ class _ClientSet:
     """Thread-safe registry of open client sockets, so shutdown can unblock
     worker threads parked in recv()."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._socks = set()
+        self._socks: set[socket.socket] = set()
 
-    def add(self, sock):
+    def add(self, sock: socket.socket) -> None:
         with self._lock:
             self._socks.add(sock)
 
-    def discard(self, sock):
+    def discard(self, sock: socket.socket) -> None:
         with self._lock:
             self._socks.discard(sock)
 
-    def shutdown_all(self):
+    def shutdown_all(self) -> None:
         with self._lock:
             for sock in self._socks:
                 with suppress(OSError):
                     sock.shutdown(socket.SHUT_RDWR)
 
 
-def _setup_logging():
+def _setup_logging() -> None:
     """Received messages go to stdout bare; diagnostics go to stderr."""
     if message_log.handlers:  # idempotent: serve() may be called more than once
         return

@@ -17,16 +17,17 @@ class FrameTooLargeError(ValueError):
 
 
 class FrameDecoder:
-    def __init__(self, max_frame_size=DEFAULT_MAX_FRAME_SIZE):
+    def __init__(self, max_frame_size: int = DEFAULT_MAX_FRAME_SIZE) -> None:
         self._buffer = bytearray()
         self._max_frame_size = max_frame_size
 
-    def feed(self, data):
+    def feed(self, data: bytes) -> list[bytes]:
         """Buffer received bytes and return the payloads of all completed frames.
 
         Raises FrameTooLargeError as soon as a length prefix exceeds the
         maximum, before any payload is buffered — a corrupt or malicious
-        prefix must not make the server allocate unbounded memory.
+        prefix must not make the server allocate unbounded memory. The
+        decoder must be discarded after an error.
         """
         self._buffer.extend(data)
         frames = []
@@ -44,7 +45,7 @@ class FrameDecoder:
         return frames
 
     @property
-    def has_partial_frame(self):
+    def has_partial_frame(self) -> bool:
         """True if buffered bytes form an incomplete frame (e.g. the client
         disconnected mid-transmission)."""
         return bool(self._buffer)
