@@ -10,7 +10,7 @@ import time
 import unittest
 
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import _DropWhenFullHandler, _enable_keepalive, serve
+from logbox.server import _DropWhenFullHandler, _enable_keepalive, _message_level, serve
 
 TIMEOUT = 5.0
 
@@ -97,6 +97,11 @@ class TestServerIntegration(unittest.TestCase):
             sock.sendall(encode(log_level="ERROR", logger="modest", mac=b"\x07"))
         self.assert_logged("ERROR [07] modest")
 
+    def test_unknown_log_level_is_emitted_not_dropped(self):
+        with self.connect() as sock:
+            sock.sendall(encode(log_level="TRACE", logger="weird", mac=b"\x0e", message="kept"))
+        self.assert_logged("TRACE [0e] weird: kept")
+
     def test_connection_survives_pause_between_messages(self):
         with self.connect() as sock:
             sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="before"))
@@ -112,6 +117,19 @@ class TestKeepalive(unittest.TestCase):
             _enable_keepalive(sock)
             # nonzero means enabled; the exact value is platform-specific
             self.assertNotEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0)
+
+
+class TestMessageLevel(unittest.TestCase):
+    ADDR = ("192.0.2.1", 1234)
+
+    def test_maps_the_four_protocol_levels(self):
+        for name in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            self.assertEqual(_message_level(name, self.ADDR), getattr(logging, name))
+
+    def test_unknown_level_falls_back_to_info_and_warns_each_time(self):
+        for _ in range(2):
+            with self.assertLogs("logbox.server", level="WARNING"):
+                self.assertEqual(_message_level("VERBOSE", self.ADDR), logging.INFO)
 
 
 class TestDropWhenFullHandler(unittest.TestCase):

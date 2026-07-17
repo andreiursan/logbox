@@ -34,7 +34,14 @@ DRAIN_GRACE = 2.0  # seconds for connected clients to finish before shutdown cut
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
-_LEVELS = logging.getLevelNamesMapping()
+
+# exactly the four levels the protocol allows
+_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
 
 Address = tuple[str, int]
 
@@ -118,9 +125,23 @@ def handle_connection(conn: socket.socket, addr: Address) -> None:
     while data := conn.recv(RECV_SIZE):
         for frame in decoder.feed(data):
             lm = LogMessage.FromString(frame)
-            message_log.log(_LEVELS.get(lm.log_level, logging.INFO), format_log_message(lm))
+            message_log.log(_message_level(lm.log_level, addr), format_log_message(lm))
     if decoder.has_partial_frame:
         log.info("client %s:%d disconnected mid-message", *addr)
+
+
+def _message_level(raw: str, addr: Address) -> int:
+    """Map a protocol log level to a logging level.
+
+    Unknown values are emitted at INFO rather than dropped — the formatted
+    line still carries the raw value verbatim — and each occurrence is
+    reported with the sending client.
+    """
+    level = _LEVELS.get(raw)
+    if level is not None:
+        return level
+    log.warning("client %s:%d sent unknown log level %r; emitting at INFO", *addr, raw)
+    return logging.INFO
 
 
 class _ClientSet:
