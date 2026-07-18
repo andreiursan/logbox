@@ -46,6 +46,13 @@ three are also available as command-line flags (see `--help`):
 | `keepalive_probes`   | `5`         | Failed probes before a vanished client is declared dead.         |
 | `drain_grace`        | `2.0`       | Seconds granted to connected clients to finish transmitting before shutdown cuts them. |
 
+Note on raising `max_connections`: every connection holds a worker thread,
+and a CPython thread reserves ~8 MB of stack by default (far less is
+actually touched). Hundreds of connections are fine; for thousands, the
+thread-per-connection model stops making sense and a `selectors` event loop
+is the right architecture — see the concurrency trade-off in the design
+notes.
+
 ## Test
 
 ```sh
@@ -80,6 +87,8 @@ protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.
   requirement (the `max_connections` default).
 - Per-client code stays a straight-line blocking read loop; idle clients
   cost nothing.
+- The model scales to hundreds of connections; for thousands, a `selectors`
+  loop (one thread, readiness-driven) would replace it.
 
 **Backpressure**
 - The accept loop takes a semaphore slot before accepting.
