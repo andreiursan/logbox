@@ -18,10 +18,6 @@ Start the server (listens on `127.0.0.1:15000`):
 .venv/bin/logbox   # or: .venv/bin/python -m logbox
 ```
 
-Host, port, and the concurrent-client limit are configurable; see `--help`.
-These and the remaining tunables (queue capacity, keepalive timings,
-shutdown grace period) live in the `Config` dataclass in `logbox/server.py`.
-
 Then, from a second terminal, send a demo log message with the bundled client:
 
 ```sh
@@ -33,6 +29,22 @@ The server prints each received message to stdout:
 ```
 ERROR [aa:bb:cc:dd:ee:ff] main: test message
 ```
+
+## Configuration
+
+All tunables live in the `Config` dataclass in `logbox/server.py`. The first
+three are also available as command-line flags (see `--help`):
+
+| Setting              | Default     | Purpose                                                          |
+| -------------------- | ----------- | ---------------------------------------------------------------- |
+| `host`               | `127.0.0.1` | Address to listen on.                                            |
+| `port`               | `15000`     | TCP port to listen on.                                           |
+| `max_connections`    | `100`       | Concurrent client limit; excess clients wait in the kernel's listen backlog. |
+| `queue_capacity`     | `10000`     | Messages buffered for stdout while the consumer stalls; beyond it, new messages are dropped (and the loss reported). |
+| `keepalive_idle`     | `60`        | Seconds of silence before the kernel starts probing a connection. |
+| `keepalive_interval` | `10`        | Seconds between keepalive probes.                                |
+| `keepalive_probes`   | `5`         | Failed probes before a vanished client is declared dead.         |
+| `drain_grace`        | `2.0`       | Seconds granted to connected clients to finish transmitting before shutdown cuts them. |
 
 ## Test
 
@@ -62,8 +74,10 @@ protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.
   the socket layer is integration-tested over real connections.
 
 **Concurrency**
-- Thread pool (`ThreadPoolExecutor`, 100 workers), not a `selectors` loop.
-- The pool cap maps directly onto "up to 100 concurrent connections".
+- Thread pool (`ThreadPoolExecutor`, `max_connections` workers), not a
+  `selectors` loop.
+- The pool cap maps directly onto the "up to 100 concurrent connections"
+  requirement (the `max_connections` default).
 - Per-client code stays a straight-line blocking read loop; idle clients
   cost nothing.
 
@@ -73,8 +87,8 @@ protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.
   kernel's listen backlog, so fd usage stays bounded.
 
 **Slow output consumer**
-- Messages reach stdout via a bounded queue and a single writer thread
-  (`QueueHandler`/`QueueListener`).
+- Messages reach stdout via a bounded queue (`queue_capacity`) and a single
+  writer thread (`QueueHandler`/`QueueListener`).
 - A stalled stdout reader never blocks ingestion; a full queue drops new
   messages, counted and reported.
 - Prefer blocking over dropping? Flip `put_nowait` to `put`.
@@ -82,8 +96,8 @@ protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.
 **Dead clients**
 - Idle connections are legitimate, so vanished peers (power loss, NAT
   timeout) would leak worker threads.
-- TCP keepalive with tightened timings (~60s idle, then 5×10s probes) lets
-  the kernel reap them.
+- TCP keepalive with tightened timings (`keepalive_idle`, then
+  `keepalive_probes` × `keepalive_interval`) lets the kernel reap them.
 
 **Input hardening**
 - Declared frame length is capped at 1 MiB before any payload is buffered.
@@ -93,8 +107,8 @@ protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.
   diagnostic warning; nothing is dropped.
 
 **Shutdown**
-- SIGINT/SIGTERM: stop the listener, wait a 2s grace period for clients to
-  finish, cut stragglers, drain workers, flush the output queue.
+- SIGINT/SIGTERM: stop the listener, wait `drain_grace` seconds for clients
+  to finish, cut stragglers, drain workers, flush the output queue.
 
 **Output conventions**
 - stdout carries exactly the received messages (the data).
