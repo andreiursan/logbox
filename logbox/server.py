@@ -98,17 +98,24 @@ def _enable_keepalive(conn: socket.socket, config: Config) -> None:
     TCP_KEEPALIVE on macOS/BSD.
     """
     conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(socket, "TCP_KEEPALIVE", None)
+    idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
+        socket, "TCP_KEEPALIVE", None
+    )
     if idle_opt is not None:
         conn.setsockopt(socket.IPPROTO_TCP, idle_opt, config.keepalive_idle)
     if hasattr(socket, "TCP_KEEPINTVL"):
-        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, config.keepalive_interval)
+        conn.setsockopt(
+            socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, config.keepalive_interval
+        )
     if hasattr(socket, "TCP_KEEPCNT"):
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, config.keepalive_probes)
 
 
 def _handle_client(
-    conn: socket.socket, addr: Address, clients: "_ClientSet", slots: threading.Semaphore
+    conn: socket.socket,
+    addr: Address,
+    clients: "_ClientSet",
+    slots: threading.Semaphore,
 ) -> None:
     """Run one connection to completion, isolating its failures."""
     try:
@@ -198,7 +205,9 @@ class _DropWhenFullHandler(QueueHandler):
         except queue.Full:
             self._dropped += 1
             if self._dropped % 1000 == 1:
-                log.warning("output queue full; %d messages dropped so far", self._dropped)
+                log.warning(
+                    "output queue full; %d messages dropped so far", self._dropped
+                )
 
 
 def _setup_logging(queue_capacity: int) -> None:

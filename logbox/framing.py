@@ -40,7 +40,7 @@ class FrameDecoder:
             end = _PREFIX.size + length
             if len(self._buffer) < end:
                 break
-            frames.append(bytes(self._buffer[_PREFIX.size:end]))
+            frames.append(bytes(self._buffer[_PREFIX.size : end]))
             del self._buffer[:end]
         return frames
 

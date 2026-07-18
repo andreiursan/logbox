@@ -13,7 +13,9 @@ def main() -> None:
         "messages and writes them to stdout.",
     )
     parser.add_argument(
-        "--host", default=defaults.host, help="address to listen on (default: %(default)s)"
+        "--host",
+        default=defaults.host,
+        help="address to listen on (default: %(default)s)",
     )
     parser.add_argument(
         "--port",

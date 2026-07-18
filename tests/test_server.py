@@ -55,7 +55,9 @@ class TestServerIntegration(unittest.TestCase):
         cls.port = free_port()
         cls.stdout = io.StringIO()
         sys.stdout = cls.stdout
-        threading.Thread(target=serve, args=(Config(port=cls.port),), daemon=True).start()
+        threading.Thread(
+            target=serve, args=(Config(port=cls.port),), daemon=True
+        ).start()
 
     @classmethod
     def tearDownClass(cls):
@@ -65,12 +67,16 @@ class TestServerIntegration(unittest.TestCase):
         deadline = time.monotonic() + TIMEOUT
         while line not in self.stdout.getvalue().splitlines():
             if time.monotonic() > deadline:
-                self.fail(f"timed out waiting for {line!r} in {self.stdout.getvalue()!r}")
+                self.fail(
+                    f"timed out waiting for {line!r} in {self.stdout.getvalue()!r}"
+                )
             time.sleep(0.02)
 
     def test_delivers_messages_end_to_end(self):
         with connect(self.port) as sock:
-            sock.sendall(encode(log_level="ERROR", logger="app", mac=b"\x01", message="hi"))
+            sock.sendall(
+                encode(log_level="ERROR", logger="app", mac=b"\x01", message="hi")
+            )
             sock.sendall(encode(log_level="INFO", logger="app", mac=b"\x01"))
         self.assert_logged("ERROR [01] app: hi")
         self.assert_logged("INFO [01] app")
@@ -79,7 +85,9 @@ class TestServerIntegration(unittest.TestCase):
         with ExitStack() as stack:
             socks = [stack.enter_context(connect(self.port)) for _ in range(100)]
             for i, sock in enumerate(socks):  # all connected before any sends
-                sock.sendall(encode(log_level="INFO", logger=f"client-{i}", mac=b"\x0c"))
+                sock.sendall(
+                    encode(log_level="INFO", logger=f"client-{i}", mac=b"\x0c")
+                )
             for i in range(len(socks)):
                 self.assert_logged(f"INFO [0c] client-{i}")  # all 100 served at once
 
@@ -100,7 +108,9 @@ class TestServerIntegration(unittest.TestCase):
 
     def test_drops_undecodable_client_and_keeps_serving(self):
         with connect(self.port) as sock:
-            sock.sendall(struct.pack(">L", 8) + b"\xff" * 8)  # valid frame, garbage protobuf
+            sock.sendall(
+                struct.pack(">L", 8) + b"\xff" * 8
+            )  # valid frame, garbage protobuf
         with connect(self.port) as sock:
             sock.sendall(encode(log_level="ERROR", logger="clean", mac=b"\x06"))
         self.assert_logged("ERROR [06] clean")
@@ -114,15 +124,23 @@ class TestServerIntegration(unittest.TestCase):
 
     def test_unknown_log_level_is_emitted_not_dropped(self):
         with connect(self.port) as sock:
-            sock.sendall(encode(log_level="TRACE", logger="weird", mac=b"\x0e", message="kept"))
+            sock.sendall(
+                encode(log_level="TRACE", logger="weird", mac=b"\x0e", message="kept")
+            )
         self.assert_logged("TRACE [0e] weird: kept")
 
     def test_connection_survives_pause_between_messages(self):
         with connect(self.port) as sock:
-            sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="before"))
+            sock.sendall(
+                encode(
+                    log_level="INFO", logger="patient", mac=b"\x08", message="before"
+                )
+            )
             self.assert_logged("INFO [08] patient: before")
             time.sleep(0.3)  # idle connection must stay usable
-            sock.sendall(encode(log_level="INFO", logger="patient", mac=b"\x08", message="after"))
+            sock.sendall(
+                encode(log_level="INFO", logger="patient", mac=b"\x08", message="after")
+            )
         self.assert_logged("INFO [08] patient: after")
 
 
@@ -170,7 +188,9 @@ class TestKeepalive(unittest.TestCase):
         with socket.socket() as sock:
             _enable_keepalive(sock, Config())
             # nonzero means enabled; the exact value is platform-specific
-            self.assertNotEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0)
+            self.assertNotEqual(
+                sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0
+            )
 
 
 class TestDropWhenFullHandler(unittest.TestCase):

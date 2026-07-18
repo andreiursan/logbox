@@ -18,11 +18,14 @@ class TestFormatLogMessage(unittest.TestCase):
         )
 
     def test_omits_unset_optional_message(self):
-        self.assertEqual(format_log_message(log_message()), "INFO [aa:bb:cc:dd:ee:ff] main")
+        self.assertEqual(
+            format_log_message(log_message()), "INFO [aa:bb:cc:dd:ee:ff] main"
+        )
 
     def test_empty_message_is_distinct_from_unset(self):
         self.assertEqual(
-            format_log_message(log_message(message="")), "INFO [aa:bb:cc:dd:ee:ff] main: "
+            format_log_message(log_message(message="")),
+            "INFO [aa:bb:cc:dd:ee:ff] main: ",
         )
 
     def test_unusual_mac_lengths_are_rendered_verbatim(self):
