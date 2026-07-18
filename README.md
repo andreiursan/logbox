@@ -5,8 +5,6 @@ writes them to stdout.
 
 ## Setup
 
-Requires Python 3.11+.
-
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -e .
@@ -17,7 +15,7 @@ python3 -m venv .venv
 Start the server (listens on `127.0.0.1:15000`):
 
 ```sh
-.venv/bin/python -m logbox   # or: .venv/bin/logbox
+.venv/bin/logbox   # or: .venv/bin/python -m logbox
 ```
 
 Host, port, and the concurrent-client limit are configurable; see `--help`.
