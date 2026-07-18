@@ -1,7 +1,7 @@
 """TCP server that emits received LogMessages to stdout via the logging module.
 
 Each connection is handled by a worker thread from a bounded pool, so up to
-MAX_CONNECTIONS clients can be connected at once, idle or active. A
+Config.max_connections clients can be connected at once, idle or active. A
 misbehaving client (abrupt disconnect, undecodable or oversized message)
 costs only its own connection; the server keeps serving the rest.
 """
@@ -14,6 +14,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from dataclasses import dataclass
 from logging.handlers import QueueHandler, QueueListener
 
 from google.protobuf.message import DecodeError
@@ -22,15 +23,24 @@ from logbox.formatting import format_log_message
 from logbox.framing import FrameDecoder, FrameTooLargeError
 from logbox.logmessage_pb2 import LogMessage
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 15000
-MAX_CONNECTIONS = 100
 RECV_SIZE = 4096
-QUEUE_CAPACITY = 10_000  # buffered messages while the stdout consumer stalls
-KEEPALIVE_IDLE = 60  # seconds of silence before the kernel starts probing
-KEEPALIVE_INTERVAL = 10  # seconds between probes
-KEEPALIVE_PROBES = 5  # failed probes before the connection is declared dead
-DRAIN_GRACE = 2.0  # seconds for connected clients to finish before shutdown cuts them
+
+
+@dataclass(frozen=True, slots=True)
+class Config:
+    """Deployment-tunable settings; defaults match the task description."""
+
+    host: str = "127.0.0.1"
+    port: int = 15000
+    max_connections: int = 100
+    queue_capacity: int = 10_000  # buffered messages while the stdout consumer stalls
+    keepalive_idle: int = 60  # seconds of silence before the kernel starts probing
+    keepalive_interval: int = 10  # seconds between probes
+    keepalive_probes: int = 5  # failed probes before the connection is declared dead
+    drain_grace: float = 2.0  # seconds for clients to finish before shutdown cuts them
+
+
+DEFAULT_CONFIG = Config()
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
@@ -46,43 +56,39 @@ _LEVELS = {
 Address = tuple[str, int]
 
 
-def serve(
-    host: str = DEFAULT_HOST,
-    port: int = DEFAULT_PORT,
-    max_connections: int = MAX_CONNECTIONS,
-) -> None:
+def serve(config: Config = DEFAULT_CONFIG) -> None:
     """Accept connections forever, dispatching each to a worker thread.
 
     On KeyboardInterrupt or SystemExit (e.g. a SIGTERM handler calling
-    sys.exit), open client sockets are shut down so blocked worker threads
-    finish promptly, then the pool is drained.
+    sys.exit), the listener closes, connected clients get a grace period
+    to finish, stragglers are cut, and the pool is drained.
     """
-    _setup_logging()
+    _setup_logging(config.queue_capacity)
     clients = _ClientSet()
-    pool = ThreadPoolExecutor(max_connections, thread_name_prefix="client")
-    slots = threading.Semaphore(max_connections)
+    pool = ThreadPoolExecutor(config.max_connections, thread_name_prefix="client")
+    slots = threading.Semaphore(config.max_connections)
     try:
-        with socket.create_server((host, port)) as server_sock:
-            log.info("listening on %s:%d", host, port)
+        with socket.create_server((config.host, config.port)) as server_sock:
+            log.info("listening on %s:%d", config.host, config.port)
             while True:
                 # don't accept (and hold fds for) more clients than we can
                 # serve; excess connections wait in the kernel's backlog
                 slots.acquire()
                 conn, addr = server_sock.accept()
-                _enable_keepalive(conn)
+                _enable_keepalive(conn, config)
                 clients.add(conn)
                 pool.submit(_handle_client, conn, addr, clients, slots)
     except (KeyboardInterrupt, SystemExit):
         log.info("shutting down")
     finally:
         # the listener is already closed: drain, then cut the stragglers
-        if not clients.drain(DRAIN_GRACE):
+        if not clients.drain(config.drain_grace):
             log.info("grace period expired; disconnecting remaining clients")
             clients.shutdown_all()
         pool.shutdown()
 
 
-def _enable_keepalive(conn: socket.socket) -> None:
+def _enable_keepalive(conn: socket.socket, config: Config) -> None:
     """Detect clients that vanish without closing (power loss, NAT timeout).
 
     Idle connections are legitimate here, so the worker thread blocks in
@@ -94,11 +100,11 @@ def _enable_keepalive(conn: socket.socket) -> None:
     conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(socket, "TCP_KEEPALIVE", None)
     if idle_opt is not None:
-        conn.setsockopt(socket.IPPROTO_TCP, idle_opt, KEEPALIVE_IDLE)
+        conn.setsockopt(socket.IPPROTO_TCP, idle_opt, config.keepalive_idle)
     if hasattr(socket, "TCP_KEEPINTVL"):
-        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, KEEPALIVE_INTERVAL)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, config.keepalive_interval)
     if hasattr(socket, "TCP_KEEPCNT"):
-        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, KEEPALIVE_PROBES)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, config.keepalive_probes)
 
 
 def _handle_client(
@@ -195,14 +201,14 @@ class _DropWhenFullHandler(QueueHandler):
                 log.warning("output queue full; %d messages dropped so far", self._dropped)
 
 
-def _setup_logging() -> None:
+def _setup_logging(queue_capacity: int) -> None:
     """Received messages go to stdout bare, through a bounded queue drained
     by a single writer thread; diagnostics go to stderr."""
     if message_log.handlers:  # idempotent: serve() may be called more than once
         return
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(logging.Formatter("%(message)s"))
-    record_queue: queue.Queue[logging.LogRecord] = queue.Queue(QUEUE_CAPACITY)
+    record_queue: queue.Queue[logging.LogRecord] = queue.Queue(queue_capacity)
     listener = QueueListener(record_queue, stdout_handler)
     listener.start()
     atexit.register(listener.stop)  # drains pending records on exit

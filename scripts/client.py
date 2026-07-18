@@ -7,12 +7,13 @@ import socket
 import struct
 
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import DEFAULT_HOST, DEFAULT_PORT
+from logbox.server import Config
 
 
 def main() -> None:
+    target = Config()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.connect((DEFAULT_HOST, DEFAULT_PORT))
+        sock.connect((target.host, target.port))
 
         lm = LogMessage()
         lm.log_level = "ERROR"

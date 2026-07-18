@@ -20,6 +20,10 @@ Start the server (listens on `127.0.0.1:15000`):
 .venv/bin/python -m logbox   # or: .venv/bin/logbox
 ```
 
+Host, port, and the concurrent-client limit are configurable; see `--help`.
+These and the remaining tunables (queue capacity, keepalive timings,
+shutdown grace period) live in the `Config` dataclass in `logbox/server.py`.
+
 Then, from a second terminal, send a demo log message with the bundled client:
 
 ```sh

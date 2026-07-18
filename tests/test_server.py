@@ -12,7 +12,13 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import _DropWhenFullHandler, _enable_keepalive, _message_level, serve
+from logbox.server import (
+    Config,
+    _DropWhenFullHandler,
+    _enable_keepalive,
+    _message_level,
+    serve,
+)
 
 TIMEOUT = 5.0
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,7 +55,7 @@ class TestServerIntegration(unittest.TestCase):
         cls.port = free_port()
         cls.stdout = io.StringIO()
         sys.stdout = cls.stdout
-        threading.Thread(target=serve, kwargs={"port": cls.port}, daemon=True).start()
+        threading.Thread(target=serve, args=(Config(port=cls.port),), daemon=True).start()
 
     @classmethod
     def tearDownClass(cls):
@@ -162,7 +168,7 @@ class TestMessageLevel(unittest.TestCase):
 class TestKeepalive(unittest.TestCase):
     def test_enables_keepalive_on_socket(self):
         with socket.socket() as sock:
-            _enable_keepalive(sock)
+            _enable_keepalive(sock, Config())
             # nonzero means enabled; the exact value is platform-specific
             self.assertNotEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0)
 
