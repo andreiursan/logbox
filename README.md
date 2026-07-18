@@ -76,7 +76,8 @@ protoc --proto_path=proto --python_out=logbox --pyi_out=logbox proto/logmessage.
 
 **Layering**
 - Protocol logic is pure and socket-free: `framing.py` (bytes → frames),
-  `formatting.py` (message → line); `server.py` is a thin IO shell.
+  `formatting.py` (message → line). `output.py` owns the stdout logging
+  pipeline; `server.py` is a thin socket shell on top.
 - Pure modules are unit-tested (frame decoding is chunking-invariant);
   the socket layer is integration-tested over real connections.
 

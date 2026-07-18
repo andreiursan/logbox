@@ -1,4 +1,4 @@
-"""TCP server that emits received LogMessages to stdout via the logging module.
+"""TCP server that receives LogMessages and hands them to the output pipeline.
 
 Each connection is handled by a worker thread from a bounded pool, so up to
 Config.max_connections clients can be connected at once, idle or active. A
@@ -6,35 +6,22 @@ misbehaving client (abrupt disconnect, undecodable or oversized message)
 costs only its own connection; the server keeps serving the rest.
 """
 
-import atexit
 import logging
-import queue
 import socket
-import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from logging.handlers import QueueHandler, QueueListener
 
 from google.protobuf.message import DecodeError
 
+from logbox import output
 from logbox.config import DEFAULT_CONFIG, Config
-from logbox.formatting import format_log_message
 from logbox.framing import FrameDecoder, FrameTooLargeError
 from logbox.logmessage_pb2 import LogMessage
 
 RECV_SIZE = 4096
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
-message_log = logging.getLogger("logbox.messages")  # received messages, to stdout
-
-# exactly the four levels the protocol allows
-_LEVELS = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-}
 
 Address = tuple[str, int]
 
@@ -46,7 +33,7 @@ def serve(config: Config = DEFAULT_CONFIG) -> None:
     sys.exit), the listener closes, connected clients get a grace period
     to finish, stragglers are cut, and the pool is drained.
     """
-    _setup_logging(config.queue_capacity)
+    output.setup(config.queue_capacity)
     clients = _ClientSet()
     pool = ThreadPoolExecutor(config.max_connections, thread_name_prefix="client")
     slots = threading.Semaphore(config.max_connections)
@@ -74,11 +61,10 @@ def serve(config: Config = DEFAULT_CONFIG) -> None:
 def _enable_keepalive(conn: socket.socket, config: Config) -> None:
     """Detect clients that vanish without closing (power loss, NAT timeout).
 
-    Idle connections are legitimate here, so the worker thread blocks in
-    recv() indefinitely; without keepalive a dead peer would hold its worker
-    forever. With it, the kernel probes and recv() fails once the peer is
-    declared dead. The idle-time constant is TCP_KEEPIDLE on Linux and
-    TCP_KEEPALIVE on macOS/BSD.
+    Idle connections are legitimate, so workers block in recv() forever — a
+    dead peer would leak its worker. With keepalive the kernel probes and
+    recv() fails once the peer is declared dead. (The idle option is
+    TCP_KEEPIDLE on Linux, TCP_KEEPALIVE on macOS/BSD.)
     """
     conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
@@ -120,29 +106,14 @@ def handle_connection(conn: socket.socket, addr: Address) -> None:
     decoder = FrameDecoder()
     while data := conn.recv(RECV_SIZE):
         for frame in decoder.feed(data):
-            lm = LogMessage.FromString(frame)
-            message_log.log(_message_level(lm.log_level, addr), format_log_message(lm))
+            output.emit(LogMessage.FromString(frame), addr)
     if decoder.has_partial_frame:
         log.info("client %s:%d disconnected mid-message", *addr)
 
 
-def _message_level(raw: str, addr: Address) -> int:
-    """Map a protocol log level to a logging level.
-
-    Unknown values are emitted at INFO rather than dropped — the formatted
-    line still carries the raw value verbatim — and each occurrence is
-    reported with the sending client.
-    """
-    level = _LEVELS.get(raw)
-    if level is not None:
-        return level
-    log.warning("client %s:%d sent unknown log level %r; emitting at INFO", *addr, raw)
-    return logging.INFO
-
-
 class _ClientSet:
-    """Thread-safe registry of open client sockets, so shutdown can wait for
-    connections to finish and unblock worker threads parked in recv()."""
+    """Thread-safe registry of open client sockets, so shutdown can wait
+    for them to finish — and cut them loose when they don't."""
 
     def __init__(self) -> None:
         self._cond = threading.Condition()
@@ -168,45 +139,3 @@ class _ClientSet:
             for sock in self._socks:
                 with suppress(OSError):
                     sock.shutdown(socket.SHUT_RDWR)
-
-
-class _DropWhenFullHandler(QueueHandler):
-    """Enqueues records without ever blocking a network thread.
-
-    When the queue is full (the stdout consumer has stalled), records are
-    dropped and the loss is counted and reported, rather than freezing
-    every client connection behind one slow reader.
-    """
-
-    def __init__(self, record_queue: queue.Queue[logging.LogRecord]) -> None:
-        super().__init__(record_queue)
-        self._dropped = 0
-
-    def enqueue(self, record: logging.LogRecord) -> None:
-        try:
-            self.queue.put_nowait(record)
-        except queue.Full:
-            self._dropped += 1
-            if self._dropped % 1000 == 1:
-                log.warning(
-                    "output queue full; %d messages dropped so far", self._dropped
-                )
-
-
-def _setup_logging(queue_capacity: int) -> None:
-    """Received messages go to stdout bare, through a bounded queue drained
-    by a single writer thread; diagnostics go to stderr."""
-    if message_log.handlers:  # idempotent: serve() may be called more than once
-        return
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(logging.Formatter("%(message)s"))
-    record_queue: queue.Queue[logging.LogRecord] = queue.Queue(queue_capacity)
-    listener = QueueListener(record_queue, stdout_handler)
-    listener.start()
-    atexit.register(listener.stop)  # drains pending records on exit
-    message_log.addHandler(_DropWhenFullHandler(record_queue))
-    message_log.setLevel(logging.DEBUG)
-    message_log.propagate = False
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )

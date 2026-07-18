@@ -8,9 +8,8 @@ def format_log_message(lm: LogMessage) -> str:
 
         ERROR [aa:bb:cc:dd:ee:ff] main: test message
 
-    The free-form message part is omitted when the optional field is unset.
-    The log level is passed through verbatim; validating it is not the
-    formatter's concern.
+    The message part is left out when the optional field is unset. The level
+    is passed through verbatim — validating it isn't the formatter's job.
     """
     suffix = f": {lm.message}" if lm.HasField("message") else ""
     return f"{lm.log_level} [{lm.mac.hex(':')}] {lm.logger}{suffix}"

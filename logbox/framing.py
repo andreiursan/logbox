@@ -1,8 +1,8 @@
 """Incremental decoder for length-prefixed frames.
 
-Wire format: each frame is a 4-byte big-endian unsigned length followed by
-that many payload bytes. TCP preserves no message boundaries, so data may
-arrive in arbitrary chunks; the decoder buffers partial frames between feeds.
+A frame is a 4-byte big-endian unsigned length followed by that many payload
+bytes. TCP doesn't preserve message boundaries, so data arrives in arbitrary
+chunks; the decoder buffers partial frames between feeds.
 """
 
 import struct
@@ -25,9 +25,8 @@ class FrameDecoder:
         """Buffer received bytes and return the payloads of all completed frames.
 
         Raises FrameTooLargeError as soon as a length prefix exceeds the
-        maximum, before any payload is buffered — a corrupt or malicious
-        prefix must not make the server allocate unbounded memory. The
-        decoder must be discarded after an error.
+        maximum, before buffering any payload — a corrupt prefix must not
+        make us allocate gigabytes. Discard the decoder after an error.
         """
         self._buffer.extend(data)
         frames = []
@@ -46,6 +45,6 @@ class FrameDecoder:
 
     @property
     def has_partial_frame(self) -> bool:
-        """True if buffered bytes form an incomplete frame (e.g. the client
-        disconnected mid-transmission)."""
+        """True if a frame is still incomplete — e.g. the client
+        disconnected mid-transmission."""
         return bool(self._buffer)

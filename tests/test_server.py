@@ -1,6 +1,4 @@
 import io
-import logging
-import queue
 import socket
 import struct
 import subprocess
@@ -13,7 +11,7 @@ from pathlib import Path
 
 from logbox.config import Config
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import _DropWhenFullHandler, _enable_keepalive, _message_level, serve
+from logbox.server import _enable_keepalive, serve
 
 TIMEOUT = 5.0
 ROOT = Path(__file__).resolve().parent.parent
@@ -165,19 +163,6 @@ class TestGracefulShutdown(unittest.TestCase):
         self.assertIn("shutting down", err)
 
 
-class TestMessageLevel(unittest.TestCase):
-    ADDR = ("192.0.2.1", 1234)
-
-    def test_maps_the_four_protocol_levels(self):
-        for name in ("DEBUG", "INFO", "WARNING", "ERROR"):
-            self.assertEqual(_message_level(name, self.ADDR), getattr(logging, name))
-
-    def test_unknown_level_falls_back_to_info_and_warns_each_time(self):
-        for _ in range(2):
-            with self.assertLogs("logbox.server", level="WARNING"):
-                self.assertEqual(_message_level("VERBOSE", self.ADDR), logging.INFO)
-
-
 class TestKeepalive(unittest.TestCase):
     def test_enables_keepalive_on_socket(self):
         with socket.socket() as sock:
@@ -186,13 +171,3 @@ class TestKeepalive(unittest.TestCase):
             self.assertNotEqual(
                 sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0
             )
-
-
-class TestDropWhenFullHandler(unittest.TestCase):
-    def test_full_queue_drops_instead_of_blocking(self):
-        record_queue: queue.Queue = queue.Queue(maxsize=1)
-        handler = _DropWhenFullHandler(record_queue)
-        record = logging.LogRecord("t", logging.INFO, "", 0, "msg", None, None)
-        handler.enqueue(record)
-        handler.enqueue(record)  # queue full: must return, not block
-        self.assertEqual(record_queue.qsize(), 1)
