@@ -2,7 +2,8 @@ import argparse
 import signal
 import sys
 
-from logbox.server import Config, serve
+from logbox.config import Config
+from logbox.server import serve
 
 
 def main() -> None:

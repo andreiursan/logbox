@@ -32,7 +32,7 @@ ERROR [aa:bb:cc:dd:ee:ff] main: test message
 
 ## Configuration
 
-All tunables live in the `Config` dataclass in `logbox/server.py`. The first
+All tunables live in the `Config` dataclass in `logbox/config.py`. The first
 three are also available as command-line flags (see `--help`):
 
 | Setting              | Default     | Purpose                                                          |

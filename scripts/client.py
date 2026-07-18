@@ -6,8 +6,8 @@ Run from the repository root: python -m scripts.client
 import socket
 import struct
 
+from logbox.config import Config
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import Config
 
 
 def main() -> None:

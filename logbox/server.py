@@ -14,33 +14,16 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from dataclasses import dataclass
 from logging.handlers import QueueHandler, QueueListener
 
 from google.protobuf.message import DecodeError
 
+from logbox.config import DEFAULT_CONFIG, Config
 from logbox.formatting import format_log_message
 from logbox.framing import FrameDecoder, FrameTooLargeError
 from logbox.logmessage_pb2 import LogMessage
 
 RECV_SIZE = 4096
-
-
-@dataclass(frozen=True, slots=True)
-class Config:
-    """Deployment-tunable settings; defaults match the task description."""
-
-    host: str = "127.0.0.1"
-    port: int = 15000
-    max_connections: int = 100
-    queue_capacity: int = 10_000  # buffered messages while the stdout consumer stalls
-    keepalive_idle: int = 60  # seconds of silence before the kernel starts probing
-    keepalive_interval: int = 10  # seconds between probes
-    keepalive_probes: int = 5  # failed probes before the connection is declared dead
-    drain_grace: float = 2.0  # seconds for clients to finish before shutdown cuts them
-
-
-DEFAULT_CONFIG = Config()
 
 log = logging.getLogger(__name__)  # server diagnostics, to stderr
 message_log = logging.getLogger("logbox.messages")  # received messages, to stdout

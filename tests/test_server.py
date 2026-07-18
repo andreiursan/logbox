@@ -11,14 +11,9 @@ import unittest
 from contextlib import ExitStack
 from pathlib import Path
 
+from logbox.config import Config
 from logbox.logmessage_pb2 import LogMessage
-from logbox.server import (
-    Config,
-    _DropWhenFullHandler,
-    _enable_keepalive,
-    _message_level,
-    serve,
-)
+from logbox.server import _DropWhenFullHandler, _enable_keepalive, _message_level, serve
 
 TIMEOUT = 5.0
 ROOT = Path(__file__).resolve().parent.parent
